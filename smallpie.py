@@ -2,6 +2,7 @@ import json
 
 from io import StringIO
 from google.cloud import bigquery
+from utils import stringify_rows
 
 class SmallPie:
     def __init__(self, project_name=None, credentials=None):
@@ -70,17 +71,15 @@ class LoadJob:
         self.bq_client = bq_client
         self.chunksize = chunksize
 
-    def preprocess_rows(self, rows):
-        file_obj = StringIO('\n'.join([json.dumps(r) for r in rows]))
 
-    def chunkify_rows(self, rows, chunksize):
-        if chunksize is None:
-            chunksize = self.chunksize
-        for i in range(0, len(rows), chunksize):
-            yield rows[i:i + chunksize]
+    def chunkify_rows(self, rows):
+        for i in range(0, len(rows), self.chunksize):
+            yield rows[i:i + self.chunksize]
 
-    def load(self):
-        pass
+    def load(self, rows, write_disposition):
+        for chunk in self.chunkify_rows(rows):
+            string_obj = stringify_rows(chunk)
+            string_obj.close()
 
     def clean_nans(self, rows):
         for row in rows:

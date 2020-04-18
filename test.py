@@ -2,7 +2,8 @@ from google.oauth2 import service_account
 from google.cloud import bigquery
 from smallpie import SmallPie
 
-key_path = 'secret_loc'
+key_path = '/path/to/secret'
+
 
 credentials = service_account.Credentials.from_service_account_file(
     key_path,
