@@ -25,6 +25,10 @@ class SmallPie:
     def copy_table(self, source_table_name, destination_table_name):
         self.bq_client.copy_table(
             source_table_name, destination_table_name)
+
+    def load_job(self, dataset_name, table_name, *args, **kwargs):
+        return LoadJob(
+            self.bq_client, dataset_name, table_name, *args, **kwargs)
     
 
     
@@ -67,19 +71,46 @@ class Table:
     
 
 class LoadJob:
-    def __init__(self, bq_client, chunksize=10000):
+    def __init__(self, bq_client, dataset_name, table_name, chunksize=10000, cast_data=False, **kwargs):
+        
         self.bq_client = bq_client
         self.chunksize = chunksize
+        self.job_config = bigquery.LoadJobConfig()
+        self.job_config.source_format = 'NEWLINE_DELIMITED_JSON'
+
+        self.job_config.autodetect = kwargs.get(
+            'autodetect', False)
+        self.job_config.write_disposition = kwargs.get(
+            'write_disposition', 'WRITE_APPEND')
+
+        if 'autodetect' in kwargs and kwargs['autodetect']:
+            self.job_config.create_disposition = 'CREATE_IF_NEEDED'
+        
+        self.table_ref = '{}.{}.{}'.format(
+            bq_client.project, dataset_name, table_name)
 
 
     def chunkify_rows(self, rows):
         for i in range(0, len(rows), self.chunksize):
             yield rows[i:i + self.chunksize]
 
-    def load(self, rows, write_disposition):
+    def upload(self, rows):
         for chunk in self.chunkify_rows(rows):
             string_obj = stringify_rows(chunk)
+            self.load_file(string_obj)
             string_obj.close()
+
+    def transform_rows(self):
+        pass
+
+    def load_file(self, file_obj):
+
+            load_job = self.bq_client.load_table_from_file(
+                file_obj, self.table_ref, job_config=self.job_config)
+
+            load_job.result()
+            loaded_rows = load_job.output_rows
+            return loaded_rows
 
     def clean_nans(self, rows):
         for row in rows:
@@ -100,8 +131,6 @@ class Query:
             self.query_str)
         return QueryResult(
             self.bq_client, query_result)
-
-
     
 
 class QueryResult:
@@ -120,5 +149,9 @@ class QueryResult:
 
         self.bq_client.copy_table(
             source_table_ref, destination_table_ref)
+
+    def to_dict(self):
+        pass
+
 
 
