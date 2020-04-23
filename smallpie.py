@@ -9,15 +9,15 @@ class SmallPie:
         if credentials is None:
             self.bq_client = bigquery.Client()
         else:
-            self.project_name = credentials.project_id
             self.bq_client = bigquery.Client(
-                credentials=credentials, project=self.project_name)
+                credentials=credentials, project=project_name)
+        self.project_name = self.bq_client.project
 
     def dataset(self, dataset_name):
         return Dataset(self.bq_client, dataset_name)
 
     def table(self, table_address):
-        return Table(self.bq_client, self.project_name, table_address)
+        return Table(table_address)
 
     def query(self, query_str):
         return Query(self.bq_client, query_str)
@@ -31,8 +31,6 @@ class SmallPie:
             self.bq_client, table_address, *args, **kwargs)
     
 
-    
-
 class Dataset:
     def __init__(self, bq_client, dataset_name):
         self.bq_client = bq_client
@@ -44,10 +42,10 @@ class Dataset:
     def delete(self):
         self.bq_client.delete_dataset(self.dataset_name)
 
-class Table:
-    def __init__(self, bq_client, project_name, table_address):
-        self.bq_client = bq_client
-        self.project_name = project_name
+
+class Table(SmallPie):
+    def __init__(self, table_address):
+        super().__init__(self)
         self.dataset_name, self.table_name = table_address.split('.')
 
         self.table_ref = '{}.{}.{}'.format(
@@ -58,21 +56,22 @@ class Table:
             self.table_ref, schema)
         self.bq_client.create_table(table)
 
-    def create_from_query(self, query_str, write_disposition='WRITE_TRUNCATE'):
+    def create_from_query(self, query_str):
         pass
 
     def delete(self):
-        pass 
+        self.bq_client.delete_table(
+            self.table_ref) 
 
-    def add_rows(self, truncate=False):
+    def add_rows(self, replace=False):
         pass
 
     
 
-class LoadJob:
-    def __init__(self, bq_client, table_address, chunksize=10000, cast_data=False, **kwargs):
-        
-        self.bq_client = bq_client
+class LoadJob(SmallPie):
+    def __init__(self, rows, table_address, chunksize=10000, cast_data=False, **kwargs):
+        super().__init__(self)
+
         self.chunksize = chunksize
         self.job_config = bigquery.LoadJobConfig()
         self.job_config.source_format = 'NEWLINE_DELIMITED_JSON'
@@ -88,7 +87,7 @@ class LoadJob:
         self.dataset_name, self.table_name = table_address.split('.')
         
         self.table_ref = '{}.{}.{}'.format(
-            bq_client.project, self.dataset_name, self.table_name)
+            self.bq_client.project, self.dataset_name, self.table_name)
 
 
     def chunkify_rows(self, rows):
@@ -105,13 +104,12 @@ class LoadJob:
         pass
 
     def load_file(self, file_obj):
+        load_job = self.bq_client.load_table_from_file(
+            file_obj, self.table_ref, job_config=self.job_config)
 
-            load_job = self.bq_client.load_table_from_file(
-                file_obj, self.table_ref, job_config=self.job_config)
-
-            load_job.result()
-            loaded_rows = load_job.output_rows
-            return loaded_rows
+        load_job.result()
+        loaded_rows = load_job.output_rows
+        return loaded_rows
 
     def clean_nans(self, rows):
         for row in rows:
@@ -122,9 +120,9 @@ class LoadJob:
                     row[k] = None
         return rows
 
-class Query:
+class Query(SmallPie):
     def __init__(self, bq_client, query_str):
-        self.bq_client = bq_client
+        super().__init__(self)
         self.query_str = query_str
 
     def run(self, to_dict=True):
