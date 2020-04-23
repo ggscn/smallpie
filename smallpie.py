@@ -16,8 +16,8 @@ class SmallPie:
     def dataset(self, dataset_name):
         return Dataset(self.bq_client, dataset_name)
 
-    def table(self, dataset_name, table_name):
-        return Table(self.bq_client, self.project_name, dataset_name, table_name)
+    def table(self, table_address):
+        return Table(self.bq_client, self.project_name, table_address)
 
     def query(self, query_str):
         return Query(self.bq_client, query_str)
@@ -26,9 +26,9 @@ class SmallPie:
         self.bq_client.copy_table(
             source_table_name, destination_table_name)
 
-    def load_job(self, dataset_name, table_name, *args, **kwargs):
+    def load_job(self, table_address, *args, **kwargs):
         return LoadJob(
-            self.bq_client, dataset_name, table_name, *args, **kwargs)
+            self.bq_client, table_address, *args, **kwargs)
     
 
     
@@ -45,11 +45,10 @@ class Dataset:
         self.bq_client.delete_dataset(self.dataset_name)
 
 class Table:
-    def __init__(self, bq_client, project_name, dataset_name, table_name):
+    def __init__(self, bq_client, project_name, table_address):
         self.bq_client = bq_client
         self.project_name = project_name
-        self.dataset_name = dataset_name
-        self.table_name = table_name
+        self.dataset_name, self.table_name = table_address.split('.')
 
         self.table_ref = '{}.{}.{}'.format(
             self.project_name, self.dataset_name, self.table_name)
@@ -71,7 +70,7 @@ class Table:
     
 
 class LoadJob:
-    def __init__(self, bq_client, dataset_name, table_name, chunksize=10000, cast_data=False, **kwargs):
+    def __init__(self, bq_client, table_address, chunksize=10000, cast_data=False, **kwargs):
         
         self.bq_client = bq_client
         self.chunksize = chunksize
@@ -85,9 +84,11 @@ class LoadJob:
 
         if 'autodetect' in kwargs and kwargs['autodetect']:
             self.job_config.create_disposition = 'CREATE_IF_NEEDED'
+
+        self.dataset_name, self.table_name = table_address.split('.')
         
         self.table_ref = '{}.{}.{}'.format(
-            bq_client.project, dataset_name, table_name)
+            bq_client.project, self.dataset_name, self.table_name)
 
 
     def chunkify_rows(self, rows):
@@ -137,9 +138,14 @@ class QueryResult:
     def __init__(self, bq_client, query_result):
         self.bq_client = bq_client
         self.query_result = query_result
+
+    def __iter__(self):
+        return self.to_dict()
+
+    def save_as_table(self, table_address, project_name=None):
         
-    def save_as_table(self, dataset_name, table_name, project_name=None):
         source_table_ref = self.query_result.destination
+        dataset_name, table_name = table_address.split('.')
 
         if project_name is None:
             project_name = source_table_ref.project
@@ -149,9 +155,15 @@ class QueryResult:
 
         self.bq_client.copy_table(
             source_table_ref, destination_table_ref)
-
+    
     def to_dict(self):
-        pass
+        schema = self.query_result.schema
+        results = self.query_result
+
+        cols = [x.name for x in schema]
+        rows = [{c: r[i] for i, c in enumerate(cols)} for r in results]
+
+        return rows
 
 
 
